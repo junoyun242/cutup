@@ -1,0 +1,43 @@
+@import '@fontsource/share-tech-mono';
+@import '@fontsource/vt323';
+
+body {
+  margin: 0;
+  background: #0e0e10;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes glitch {
+  0% {
+    opacity: 1;
+    text-shadow: 0 0 6px #00ff88, -2px 0 #ff0000;
+  }
+  33% {
+    opacity: 0.85;
+    text-shadow: 0 0 6px #00ff88, 2px 0 #0000ff;
+  }
+  66% {
+    opacity: 0.95;
+    text-shadow: 0 0 6px #00ff88, -1px 0 #ff0000, 1px 0 #0000ff;
+  }
+  100% {
+    opacity: 1;
+    text-shadow: 0 0 6px #00ff88;
+  }
+}

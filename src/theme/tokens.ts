@@ -1,0 +1,16 @@
+export const T = {
+  panelDark: '#1a1a1e',
+  panelMid: '#2a2a2e',
+  panelLight: '#3a3a3e',
+  amberLed: '#ff9500',
+  amberGlow: '0 0 8px #ff950066, 0 0 16px #ff950033',
+  greenLed: '#39ff14',
+  greenGlow: '0 0 8px #39ff1444',
+  vfdGreen: '#00ff88',
+  grooveDark: '#111114',
+  grooveLight: '#444448',
+  labelText: '#999',
+  engravedText: '#555',
+  fontDisplay: "'VT323', monospace",
+  fontLabel: "'Share Tech Mono', monospace",
+} as const;

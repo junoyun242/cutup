@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#1a1a1e"/>
+  <rect x="32" y="32" width="448" height="448" rx="32" fill="#222226" stroke="#333" stroke-width="4"/>
+  <rect x="64" y="100" width="384" height="200" rx="8" fill="#0a0a0c"/>
+  <text x="256" y="225" text-anchor="middle" font-family="monospace" font-size="72" font-weight="bold" fill="#00ff88" opacity="0.9">CUT-UP</text>
+  <line x1="140" y1="250" x2="372" y2="250" stroke="#00ff88" stroke-width="2" opacity="0.4"/>
+  <circle cx="100" cy="380" r="16" fill="#ff9500"/>
+  <circle cx="100" cy="380" r="16" fill="#ff9500" opacity="0.3" filter="url(#glow)"/>
+  <rect x="160" y="350" width="200" height="56" rx="6" fill="#c03000"/>
+  <text x="260" y="386" text-anchor="middle" font-family="monospace" font-size="22" font-weight="bold" fill="#fff" letter-spacing="4">/// CUT ///</text>
+  <circle cx="412" cy="380" r="8" fill="#39ff14"/>
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+</svg>
