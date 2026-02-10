@@ -139,7 +139,11 @@ export const HistoryModule = () => {
                   ? `F${entry.fragmentSize} C${entry.chaosLevel}`
                   : entry.technique === 'permutation'
                     ? 'PRM'
-                    : `W${entry.lineWidth ?? 60} F${entry.foldPosition ?? 50}%`}
+                    : entry.technique === 'lineshuffle'
+                      ? 'SHFL'
+                      : entry.technique === 'foldin'
+                        ? `W${entry.lineWidth ?? 60} F${entry.foldPosition ?? 50}%`
+                        : ''}
               </Text>
               <Tooltip label="DELETE">
                 <ActionIcon

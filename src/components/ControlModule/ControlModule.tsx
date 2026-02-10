@@ -157,6 +157,8 @@ export const ControlModule = () => {
   const setFoldPosition = useCutUpStore((s) => s.setFoldPosition);
   const lineWidth = useCutUpStore((s) => s.lineWidth);
   const setLineWidth = useCutUpStore((s) => s.setLineWidth);
+  const targetSyllables = useCutUpStore((s) => s.targetSyllables);
+  const setTargetSyllables = useCutUpStore((s) => s.setTargetSyllables);
   const isProcessing = useCutUpStore((s) => s.isProcessing);
   const cut = useCutUpStore((s) => s.cut);
   const reCut = useCutUpStore((s) => s.reCut);
@@ -166,6 +168,8 @@ export const ControlModule = () => {
     { key: 'cutup', label: 'Cut-Up' },
     { key: 'foldin', label: 'Fold-In' },
     { key: 'permutation', label: 'Permute' },
+    { key: 'lineshuffle', label: 'Shuffle' },
+    { key: 'erasure', label: 'Erasure' },
   ];
 
   return (
@@ -184,18 +188,22 @@ export const ControlModule = () => {
       </Group>
 
       {/* Parameter Sliders */}
-      {technique !== 'permutation' && (
+      {(technique === 'cutup' || technique === 'foldin' || technique === 'permutation') && (
         <Group gap="lg" justify="center" w="100%" wrap="wrap">
-          {technique === 'cutup' ? (
+          {technique === 'cutup' && (
             <>
               <KnobSlider label="Fragment" value={fragmentSize} onChange={setFragmentSize} min={1} max={5} step={1} />
               <KnobSlider label="Chaos" value={chaosLevel} onChange={setChaosLevel} min={1} max={10} step={1} />
             </>
-          ) : (
+          )}
+          {technique === 'foldin' && (
             <>
               <KnobSlider label="Width" value={lineWidth} onChange={setLineWidth} min={20} max={120} step={5} />
               <KnobSlider label="Fold" value={foldPosition} onChange={setFoldPosition} min={10} max={90} step={5} />
             </>
+          )}
+          {(technique === 'cutup' || technique === 'permutation') && (
+            <KnobSlider label="Syllable" value={targetSyllables} onChange={setTargetSyllables} min={0} max={16} step={1} />
           )}
         </Group>
       )}
@@ -225,11 +233,11 @@ export const ControlModule = () => {
           </Text>
         </Flex>
         <Button onClick={cut} disabled={isProcessing} styles={synthButtonStyle}>
-          {technique === 'cutup' ? '/// CUT ///' : technique === 'foldin' ? '/// FOLD ///' : '/// PERMUTE ///'}
+          {technique === 'cutup' ? '/// CUT ///' : technique === 'foldin' ? '/// FOLD ///' : technique === 'lineshuffle' ? '/// SHUFFLE ///' : technique === 'erasure' ? '/// ERASE ///' : '/// PERMUTE ///'}
         </Button>
-        {outputText && technique !== 'permutation' && (
+        {outputText && (technique === 'cutup' || technique === 'foldin' || technique === 'lineshuffle') && (
           <Button onClick={reCut} disabled={isProcessing} styles={secondaryButtonStyle}>
-            {technique === 'cutup' ? 'RE-CUT' : 'RE-FOLD'}
+            {technique === 'cutup' ? 'RE-CUT' : technique === 'foldin' ? 'RE-FOLD' : 'RE-SHUFFLE'}
           </Button>
         )}
       </Stack>

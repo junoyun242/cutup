@@ -148,6 +148,17 @@ export const InputModule = () => {
     );
   }
 
+  // Line shuffle / Erasure — single input
+  if (technique === 'lineshuffle' || technique === 'erasure') {
+    return (
+      <InputArea
+        value={inputText}
+        onChange={setInputText}
+        placeholder={technique === 'lineshuffle' ? "PASTE TEXT WITH MULTIPLE LINES..." : "PASTE TEXT TO ERASE FROM..."}
+      />
+    );
+  }
+
   // Cut-up — primary input + optional second source
   const hasSecondSource = showSecondSource || secondInputText.trim().length > 0;
 

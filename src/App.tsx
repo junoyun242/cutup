@@ -63,7 +63,7 @@ const App = () => {
             textAlign: 'center',
           }}
         >
-          {technique === 'cutup' ? 'CUT-UP MACHINE' : technique === 'foldin' ? 'FOLD-IN MACHINE' : 'PERMUTATION MACHINE'}
+          {{ cutup: 'CUT-UP MACHINE', foldin: 'FOLD-IN MACHINE', permutation: 'PERMUTATION MACHINE', lineshuffle: 'LINE SHUFFLE', erasure: 'ERASURE MACHINE' }[technique]}
         </Text>
         <Text
           style={{ fontFamily: T.fontLabel, fontSize: '0.55rem', color: T.engravedText, letterSpacing: '0.1em' }}

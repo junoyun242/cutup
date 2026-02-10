@@ -1,28 +1,17 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { HistoryEntry, ExportData, Technique } from "../types/cutup";
-import { DEFAULT_SYSTEM_PROMPT, LLM_MODELS } from "../types/cutup";
 import {
   performCutUp,
   performFoldIn,
+  performLineShuffle,
   performPermutation,
 } from "../utils/cutUpEngine";
+import { generateMarkov } from "../utils/markov";
+import { generatePOSMarkov } from "../utils/posMarkov";
+import { breakBySyllables } from "../utils/syllable";
 
 const MAX_HISTORY = 50;
-
-let llmWorker: Worker | null = null;
-
-const getLLMWorker = (onMessage: (e: MessageEvent) => void) => {
-  if (!llmWorker) {
-    llmWorker = new Worker(new URL("../utils/llm.worker.ts", import.meta.url), {
-      type: "module",
-    });
-  }
-  llmWorker.onmessage = onMessage;
-  return llmWorker;
-};
-
-export type RefineStatus = "idle" | "downloading" | "generating" | "error";
 
 interface CutUpStore {
   // Input
@@ -44,23 +33,38 @@ interface CutUpStore {
   setFoldPosition: (position: number) => void;
   lineWidth: number;
   setLineWidth: (width: number) => void;
+  targetSyllables: number;
+  setTargetSyllables: (count: number) => void;
 
   // Output
   outputText: string;
   isProcessing: boolean;
 
-  // Refine (LLM)
-  llmModelId: string;
-  setLLMModelId: (id: string) => void;
-  systemPrompt: string;
-  setSystemPrompt: (prompt: string) => void;
+  // Erasure
+  erasureLines: string[][];
+  erasureSelected: boolean[][];
+  toggleErasureWord: (lineIndex: number, wordIndex: number) => void;
+  getErasureText: () => string;
+
+  // Output tools
+  showSyllables: boolean;
+  toggleSyllables: () => void;
+  filterWord: string;
+  setFilterWord: (word: string) => void;
+  showPosFilter: boolean;
+  toggleShowPosFilter: () => void;
+  posFilterTags: string[];
+  togglePosFilterTag: (tag: string) => void;
+
+  // Markov refine
+  markovMode: "word" | "pos";
+  setMarkovMode: (mode: "word" | "pos") => void;
+  markovOrder: number;
+  setMarkovOrder: (order: number) => void;
+  markovCount: number;
+  setMarkovCount: (count: number) => void;
   refinedText: string;
-  refineStreamText: string;
-  refineStatus: RefineStatus;
-  refineProgress: number;
-  refineError: string;
   refine: () => void;
-  abortRefine: () => void;
 
   // Actions
   cut: () => void;
@@ -87,7 +91,8 @@ export const useCutUpStore = create<CutUpStore>()(
       setSecondInputText: (text) => set({ secondInputText: text }),
 
       technique: "cutup" as Technique,
-      setTechnique: (technique) => set({ technique }),
+      setTechnique: (technique) =>
+        set({ technique, erasureLines: [], erasureSelected: [] }),
 
       fragmentSize: 2,
       setFragmentSize: (size) => set({ fragmentSize: size }),
@@ -97,74 +102,79 @@ export const useCutUpStore = create<CutUpStore>()(
       setFoldPosition: (position) => set({ foldPosition: position }),
       lineWidth: 60,
       setLineWidth: (width) => set({ lineWidth: width }),
+      targetSyllables: 0,
+      setTargetSyllables: (count) => set({ targetSyllables: count }),
 
       outputText: "",
       isProcessing: false,
 
-      llmModelId: LLM_MODELS[0].id,
-      setLLMModelId: (id) => set({ llmModelId: id }),
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
-      setSystemPrompt: (prompt) => set({ systemPrompt: prompt }),
-      refinedText: "",
-      refineStreamText: "",
-      refineStatus: "idle" as RefineStatus,
-      refineProgress: 0,
-      refineError: "",
-
-      refine: () => {
-        const { outputText, refineStatus, llmModelId, systemPrompt } = get();
-        if (
-          !outputText ||
-          refineStatus === "downloading" ||
-          refineStatus === "generating"
-        )
-          return;
-
-        set({
-          refinedText: "",
-          refineStreamText: "",
-          refineError: "",
-          refineProgress: 0,
-        });
-
-        const worker = getLLMWorker((e: MessageEvent) => {
-          const { type } = e.data;
-          if (type === "status") {
-            set({ refineStatus: e.data.status as RefineStatus });
-          } else if (type === "download-progress") {
-            set({ refineProgress: e.data.progress });
-          } else if (type === "stream") {
-            set((state) => ({
-              refineStreamText: state.refineStreamText + e.data.token,
-            }));
-          } else if (type === "complete") {
-            set({
-              refinedText: e.data.text,
-              refineStreamText: "",
-              refineStatus: "idle",
-            });
-          } else if (type === "aborted") {
-            set({ refineStatus: "idle", refineStreamText: "" });
-          } else if (type === "model-info") {
-            // Informational — could show dtype/device in UI
-          } else if (type === "error") {
-            set({ refineStatus: "error", refineError: e.data.error });
+      // Erasure
+      erasureLines: [],
+      erasureSelected: [],
+      toggleErasureWord: (lineIndex, wordIndex) => {
+        set((state) => {
+          const newSelected = state.erasureSelected.map((line) => [...line]);
+          if (newSelected[lineIndex]) {
+            newSelected[lineIndex][wordIndex] =
+              !newSelected[lineIndex][wordIndex];
           }
-        });
-
-        worker.postMessage({
-          type: "refine",
-          text: outputText,
-          modelId: llmModelId,
-          systemPrompt,
+          return { erasureSelected: newSelected };
         });
       },
+      getErasureText: () => {
+        const { erasureLines, erasureSelected } = get();
+        return erasureLines
+          .map((line, i) =>
+            line.filter((_, j) => erasureSelected[i]?.[j]).join(" "),
+          )
+          .filter((l) => l)
+          .join("\n");
+      },
 
-      abortRefine: () => {
-        if (llmWorker) {
-          llmWorker.postMessage({ type: "abort" });
+      // Output tools
+      showSyllables: false,
+      toggleSyllables: () =>
+        set((state) => ({ showSyllables: !state.showSyllables })),
+      filterWord: "",
+      setFilterWord: (word) => set({ filterWord: word }),
+      showPosFilter: false,
+      toggleShowPosFilter: () =>
+        set((state) => ({ showPosFilter: !state.showPosFilter })),
+      posFilterTags: [] as string[],
+      togglePosFilterTag: (tag) =>
+        set((state) => ({
+          posFilterTags: state.posFilterTags.includes(tag)
+            ? state.posFilterTags.filter((t) => t !== tag)
+            : [...state.posFilterTags, tag],
+        })),
+
+      // Markov
+      markovMode: "pos" as "word" | "pos",
+      setMarkovMode: (mode) => set({ markovMode: mode }),
+      markovOrder: 2,
+      setMarkovOrder: (order) => set({ markovOrder: order }),
+      markovCount: 5,
+      setMarkovCount: (count) => set({ markovCount: count }),
+      refinedText: "",
+
+      refine: () => {
+        const { inputText, secondInputText, markovMode, markovOrder, markovCount, targetSyllables } = get();
+        const source = [inputText, secondInputText]
+          .filter((t) => t.trim())
+          .join(" ");
+        if (!source.trim()) return;
+
+        let result = markovMode === "pos"
+          ? generatePOSMarkov(source, { order: markovOrder, count: markovCount, maxWords: 30 })
+          : generateMarkov(source, {
+          order: markovOrder,
+          count: markovCount,
+          maxWords: 30,
+        });
+        if (targetSyllables > 0) {
+          result = breakBySyllables(result, targetSyllables);
         }
-        set({ refineStatus: "idle", refineStreamText: "" });
+        set({ refinedText: result });
       },
 
       cut: () => {
@@ -176,14 +186,32 @@ export const useCutUpStore = create<CutUpStore>()(
           chaosLevel,
           foldPosition,
           lineWidth,
+          targetSyllables,
         } = get();
         if (!inputText.trim()) return;
         if (technique === "foldin" && !secondInputText.trim()) return;
+
+        // Erasure: parse words into grid, no processing delay
+        if (technique === "erasure") {
+          const lines = inputText
+            .split("\n")
+            .filter((l) => l.trim())
+            .map((l) => l.split(/\s+/).filter(Boolean));
+          const selected = lines.map((line) => line.map(() => false));
+          set({
+            erasureLines: lines,
+            erasureSelected: selected,
+            outputText: "",
+            refinedText: "",
+          });
+          return;
+        }
+
         set({
           isProcessing: true,
           refinedText: "",
-          refineStreamText: "",
-          refineStatus: "idle" as RefineStatus,
+          erasureLines: [],
+          erasureSelected: [],
         });
         setTimeout(
           () => {
@@ -199,9 +227,15 @@ export const useCutUpStore = create<CutUpStore>()(
                 lineWidth,
               });
               resultText = result.text;
+            } else if (technique === "lineshuffle") {
+              const result = performLineShuffle(inputText);
+              resultText = result.text;
             } else {
               const result = performPermutation(inputText);
               resultText = result.text;
+            }
+            if (targetSyllables > 0 && (technique === "cutup" || technique === "permutation")) {
+              resultText = breakBySyllables(resultText, targetSyllables);
             }
             set({ outputText: resultText, isProcessing: false });
             get().addToHistory();
@@ -217,20 +251,26 @@ export const useCutUpStore = create<CutUpStore>()(
       },
 
       useOutputAsInput: () => {
-        const { outputText } = get();
-        if (!outputText) return;
+        const { outputText, technique } = get();
+        // For erasure, use the selected words
+        const text =
+          technique === "erasure" ? get().getErasureText() : outputText;
+        if (!text) return;
         set({
-          inputText: outputText,
+          inputText: text,
           outputText: "",
           refinedText: "",
-          refineStreamText: "",
+          erasureLines: [],
+          erasureSelected: [],
         });
       },
 
       copyOutput: async () => {
-        const { outputText } = get();
-        if (!outputText) return;
-        await navigator.clipboard.writeText(outputText);
+        const { outputText, technique } = get();
+        const text =
+          technique === "erasure" ? get().getErasureText() : outputText;
+        if (!text) return;
+        await navigator.clipboard.writeText(text);
       },
 
       history: [],
@@ -252,7 +292,10 @@ export const useCutUpStore = create<CutUpStore>()(
           id: crypto.randomUUID(),
           timestamp: Date.now(),
           inputText,
-          ...(technique !== "permutation" && secondInputText.trim()
+          ...(technique !== "permutation" &&
+          technique !== "lineshuffle" &&
+          technique !== "erasure" &&
+          secondInputText.trim()
             ? { secondInputText }
             : {}),
           outputText,
@@ -281,7 +324,8 @@ export const useCutUpStore = create<CutUpStore>()(
           foldPosition: entry.foldPosition ?? 50,
           lineWidth: entry.lineWidth ?? 60,
           refinedText: "",
-          refineStreamText: "",
+          erasureLines: [],
+          erasureSelected: [],
         });
       },
 
@@ -325,8 +369,11 @@ export const useCutUpStore = create<CutUpStore>()(
         chaosLevel: state.chaosLevel,
         foldPosition: state.foldPosition,
         lineWidth: state.lineWidth,
-        llmModelId: state.llmModelId,
-        systemPrompt: state.systemPrompt,
+        markovMode: state.markovMode,
+        markovOrder: state.markovOrder,
+        markovCount: state.markovCount,
+        showSyllables: state.showSyllables,
+        targetSyllables: state.targetSyllables,
       }),
     },
   ),

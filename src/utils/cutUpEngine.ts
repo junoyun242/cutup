@@ -27,8 +27,29 @@ export const performCutUp = (texts: string[], options: CutUpOptions): CutUpResul
   }
   const fragments = fragmentize(combined, options.fragmentSize);
   const shuffled = shuffle(fragments, options.chaosLevel);
+
+  // Group fragments into lines (~8-12 words each) so syllable counter & filter work
+  const lines: string[] = [];
+  let currentLine: string[] = [];
+  let wordCount = 0;
+  const wordsPerLine = Math.max(6, Math.min(12, Math.round(8 + options.chaosLevel * 0.5)));
+
+  for (const fragment of shuffled) {
+    const fragWords = fragment.split(/\s+/).length;
+    currentLine.push(fragment);
+    wordCount += fragWords;
+    if (wordCount >= wordsPerLine) {
+      lines.push(currentLine.join(' '));
+      currentLine = [];
+      wordCount = 0;
+    }
+  }
+  if (currentLine.length > 0) {
+    lines.push(currentLine.join(' '));
+  }
+
   return {
-    text: shuffled.join(' '),
+    text: lines.join('\n'),
     fragments: shuffled,
   };
 };
@@ -80,6 +101,13 @@ export const performFoldIn = (textA: string, textB: string, options: FoldInOptio
     text: resultLines.join('\n'),
     lines: resultLines,
   };
+};
+
+export const performLineShuffle = (text: string): { text: string; lines: string[] } => {
+  const lines = text.split('\n').filter((l) => l.trim());
+  if (lines.length === 0) return { text: '', lines: [] };
+  const shuffled = shuffle(lines);
+  return { text: shuffled.join('\n'), lines: shuffled };
 };
 
 const MAX_FULL_PERMUTATION_WORDS = 7;

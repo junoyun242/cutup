@@ -2,18 +2,16 @@ import { useState } from "react";
 import {
   Box,
   Button,
-  Collapse,
   Flex,
+  Group,
   Modal,
-  Progress,
-  Select,
+  Slider,
   Stack,
   Text,
-  Textarea,
   Tooltip,
 } from "@mantine/core";
-import { useCutUpStore, type RefineStatus } from "../../store/useCutUpStore";
-import { DEFAULT_SYSTEM_PROMPT, LLM_MODELS } from "../../types/cutup";
+import { useCutUpStore } from "../../store/useCutUpStore";
+import { countLineSyllables } from "../../utils/syllable";
 import { T } from "../../theme/tokens";
 
 const modalStyles = {
@@ -47,6 +45,22 @@ const modalStyles = {
   },
 };
 
+const sliderStyles = {
+  track: { height: 6, background: "#1a1a1e", borderColor: "transparent" },
+  bar: {
+    background: `linear-gradient(to right, ${T.amberLed}88, ${T.amberLed})`,
+  },
+  thumb: {
+    width: 18,
+    height: 18,
+    background:
+      "radial-gradient(circle at 40% 35%, #666, #3a3a3a 60%, #2a2a2a)",
+    border: "2px solid #555",
+    boxShadow: `0 0 6px rgba(255,149,0,0.3), 0 2px 4px rgba(0,0,0,0.5)`,
+  },
+  markLabel: { fontFamily: T.fontLabel, fontSize: "0.5rem", color: T.engravedText },
+};
+
 const smallLabelStyle = {
   fontFamily: T.fontLabel,
   fontSize: "0.5rem",
@@ -71,38 +85,22 @@ interface RefineModalProps {
 }
 
 export const RefineModal = ({ opened, onClose }: RefineModalProps) => {
-  const outputText = useCutUpStore((s) => s.outputText);
-  const llmModelId = useCutUpStore((s) => s.llmModelId);
-  const setLLMModelId = useCutUpStore((s) => s.setLLMModelId);
-  const systemPrompt = useCutUpStore((s) => s.systemPrompt);
-  const setSystemPrompt = useCutUpStore((s) => s.setSystemPrompt);
+  const inputText = useCutUpStore((s) => s.inputText);
+  const secondInputText = useCutUpStore((s) => s.secondInputText);
+  const markovMode = useCutUpStore((s) => s.markovMode);
+  const setMarkovMode = useCutUpStore((s) => s.setMarkovMode);
+  const markovOrder = useCutUpStore((s) => s.markovOrder);
+  const setMarkovOrder = useCutUpStore((s) => s.setMarkovOrder);
+  const markovCount = useCutUpStore((s) => s.markovCount);
+  const setMarkovCount = useCutUpStore((s) => s.setMarkovCount);
+  const targetSyllables = useCutUpStore((s) => s.targetSyllables);
+  const setTargetSyllables = useCutUpStore((s) => s.setTargetSyllables);
   const refinedText = useCutUpStore((s) => s.refinedText);
-  const refineStreamText = useCutUpStore((s) => s.refineStreamText);
-  const refineStatus = useCutUpStore((s) => s.refineStatus);
-  const refineProgress = useCutUpStore((s) => s.refineProgress);
-  const refineError = useCutUpStore((s) => s.refineError);
   const refine = useCutUpStore((s) => s.refine);
-  const abortRefine = useCutUpStore((s) => s.abortRefine);
 
-  const [promptOpen, setPromptOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const isActive =
-    refineStatus === "downloading" || refineStatus === "generating";
-  const displayText = refinedText || refineStreamText;
-
-  const statusLabel = (status: RefineStatus, progress: number) => {
-    switch (status) {
-      case "downloading":
-        return `DOWNLOADING MODEL ${progress}%`;
-      case "generating":
-        return "GENERATING";
-      case "error":
-        return "ERROR";
-      default:
-        return "READY";
-    }
-  };
+  const hasSource = inputText.trim() || secondInputText.trim();
 
   const handleCopy = async () => {
     if (!refinedText) return;
@@ -117,185 +115,196 @@ export const RefineModal = ({ opened, onClose }: RefineModalProps) => {
       inputText: refinedText,
       outputText: "",
       refinedText: "",
-      refineStreamText: "",
     });
     onClose();
   };
 
-  const handleClose = () => {
-    if (isActive) return;
-    onClose();
-  };
-
-  const modelData = LLM_MODELS.map((m) => ({
-    value: m.id,
-    label: `${m.label} (${m.size})`,
-  }));
-
   return (
     <Modal
       opened={opened}
-      onClose={handleClose}
-      title="AI REFINE"
+      onClose={onClose}
+      title="MARKOV CHAIN"
       centered
       size="lg"
-      closeOnClickOutside={!isActive}
-      closeOnEscape={!isActive}
       styles={modalStyles}
     >
-      <Stack gap="sm">
-        {/* Model selector */}
-        <Box>
-          <Text style={smallLabelStyle} mb={4}>
-            MODEL
-          </Text>
-          <Select
-            value={llmModelId}
-            onChange={(v) => v && setLLMModelId(v)}
-            data={modelData}
-            disabled={isActive}
-            styles={{
-              input: {
-                background: "#111114",
-                border: "1px solid #333",
-                color: T.amberLed,
-                fontFamily: T.fontLabel,
-                fontSize: "0.65rem",
-                letterSpacing: "0.1em",
-              },
-              dropdown: {
-                background: "#1a1a1e",
-                border: "1px solid #333",
-              },
-              option: {
-                fontFamily: T.fontLabel,
-                fontSize: "0.6rem",
-                color: T.labelText,
-                "&[data-selected]": { background: "#333", color: T.amberLed },
-                "&:hover": { background: "#2a2a2e" },
-              },
-            }}
-          />
-        </Box>
-
-        {/* System prompt toggle */}
-        <Box>
-          <Button
-            variant="subtle"
-            onClick={() => setPromptOpen((o) => !o)}
-            disabled={isActive}
-            styles={{
-              root: {
-                ...smallLabelStyle,
-                padding: "0.2rem 0",
-                height: "auto",
-                color: T.engravedText,
-                "&:hover": { background: "transparent", color: T.labelText },
-              },
-            }}
-          >
-            {promptOpen ? "▾" : "▸"} SYSTEM PROMPT
-          </Button>
-          <Collapse in={promptOpen}>
-            <Textarea
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.currentTarget.value)}
-              disabled={isActive}
-              minRows={3}
-              maxRows={6}
-              autosize
-              styles={{
-                input: {
-                  background: "#111114",
-                  border: "1px solid #333",
-                  color: T.labelText,
-                  fontFamily: T.fontLabel,
-                  fontSize: "0.6rem",
-                  lineHeight: 1.5,
-                  resize: "none" as const,
-                },
-              }}
-            />
+      <Stack gap="md">
+        {/* Mode Toggle */}
+        <Group gap={4} justify="center">
+          {(["word", "pos"] as const).map((mode) => (
             <Button
-              variant="subtle"
-              size="xs"
-              mt={4}
-              onClick={() => setSystemPrompt(DEFAULT_SYSTEM_PROMPT)}
-              disabled={isActive}
+              key={mode}
+              onClick={() => setMarkovMode(mode)}
               styles={{
                 root: {
-                  ...smallLabelStyle,
-                  fontSize: "0.45rem",
-                  padding: "0.1rem 0.4rem",
+                  background: markovMode === mode
+                    ? "linear-gradient(to bottom, #444, #333)"
+                    : "transparent",
+                  color: markovMode === mode ? T.amberLed : T.engravedText,
+                  fontFamily: T.fontLabel,
+                  fontSize: "0.6rem",
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase" as const,
+                  border: markovMode === mode
+                    ? `1px solid ${T.amberLed}44`
+                    : "1px solid #333",
                   height: "auto",
-                  color: T.engravedText,
+                  padding: "0.4rem 0.8rem",
+                  boxShadow: markovMode === mode
+                    ? `0 0 8px ${T.amberLed}22, inset 0 1px 0 rgba(255,255,255,0.05)`
+                    : "none",
+                  transition: "all 150ms ease",
                   "&:hover": {
-                    background: "transparent",
-                    color: T.labelText,
+                    background: markovMode === mode
+                      ? "linear-gradient(to bottom, #444, #333)"
+                      : "rgba(255,255,255,0.03)",
                   },
                 },
               }}
             >
-              RESET TO DEFAULT
+              {mode === "word" ? "Word" : "POS (Grammar)"}
             </Button>
-          </Collapse>
-        </Box>
+          ))}
+        </Group>
+        <Text
+          ta="center"
+          style={{
+            ...smallLabelStyle,
+            fontSize: "0.4rem",
+            color: "#555",
+          }}
+        >
+          {markovMode === "pos"
+            ? "GRAMMAR-AWARE — CORRECT STRUCTURE, RANDOM WORDS"
+            : "WORD CHAIN — FOLLOWS ORIGINAL WORD PATTERNS"}
+        </Text>
 
-        {/* Progress bar */}
-        {refineStatus === "downloading" && (
-          <Box>
-            <Progress
-              value={refineProgress}
-              size="xs"
-              styles={{
-                root: { background: "#111114" },
-                section: {
-                  background: `linear-gradient(to right, ${T.amberLed}88, ${T.amberLed})`,
-                },
+        {/* Controls */}
+        <Group gap="lg" justify="center" w="100%" wrap="wrap">
+          <Stack align="center" gap={6} style={{ flex: 1, minWidth: 80, maxWidth: 160 }}>
+            <Text style={smallLabelStyle}>Order</Text>
+            <Text
+              style={{
+                fontFamily: T.fontDisplay,
+                fontSize: "1.6rem",
+                color: T.amberLed,
+                textShadow: "0 0 8px rgba(255,149,0,0.5)",
+                lineHeight: 1,
               }}
+            >
+              {markovOrder}
+            </Text>
+            <Slider
+              value={markovOrder}
+              onChange={setMarkovOrder}
+              min={1}
+              max={4}
+              step={1}
+              label={null}
+              style={{ width: "100%" }}
+              styles={sliderStyles}
+              marks={[
+                { value: 1, label: "1" },
+                { value: 4, label: "4" },
+              ]}
             />
-          </Box>
-        )}
+            <Text style={{ ...smallLabelStyle, fontSize: "0.4rem", color: "#555" }}>
+              LOW = SURREAL / HIGH = COHERENT
+            </Text>
+          </Stack>
+          <Stack align="center" gap={6} style={{ flex: 1, minWidth: 80, maxWidth: 160 }}>
+            <Text style={smallLabelStyle}>Lines</Text>
+            <Text
+              style={{
+                fontFamily: T.fontDisplay,
+                fontSize: "1.6rem",
+                color: T.amberLed,
+                textShadow: "0 0 8px rgba(255,149,0,0.5)",
+                lineHeight: 1,
+              }}
+            >
+              {markovCount}
+            </Text>
+            <Slider
+              value={markovCount}
+              onChange={setMarkovCount}
+              min={1}
+              max={12}
+              step={1}
+              label={null}
+              style={{ width: "100%" }}
+              styles={sliderStyles}
+              marks={[
+                { value: 1, label: "1" },
+                { value: 12, label: "12" },
+              ]}
+            />
+          </Stack>
+          <Stack align="center" gap={6} style={{ flex: 1, minWidth: 80, maxWidth: 160 }}>
+            <Text style={smallLabelStyle}>Syllable</Text>
+            <Text
+              style={{
+                fontFamily: T.fontDisplay,
+                fontSize: "1.6rem",
+                color: T.amberLed,
+                textShadow: "0 0 8px rgba(255,149,0,0.5)",
+                lineHeight: 1,
+              }}
+            >
+              {targetSyllables || "OFF"}
+            </Text>
+            <Slider
+              value={targetSyllables}
+              onChange={setTargetSyllables}
+              min={0}
+              max={16}
+              step={1}
+              label={null}
+              style={{ width: "100%" }}
+              styles={sliderStyles}
+              marks={[
+                { value: 0, label: "OFF" },
+                { value: 16, label: "16" },
+              ]}
+            />
+          </Stack>
+        </Group>
 
-        {/* Status indicator */}
-        <Flex align="center" gap={6}>
-          <Box
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: isActive
-                ? refineStatus === "generating"
-                  ? T.greenLed
-                  : T.amberLed
-                : refineStatus === "error"
-                  ? "#ff4444"
-                  : "#333",
-              boxShadow: isActive
-                ? refineStatus === "generating"
-                  ? T.greenGlow
-                  : T.amberGlow
-                  : "none",
-              transition: "all 0.3s ease",
-              animation:
-                refineStatus === "generating"
-                  ? "pulse 1s ease-in-out infinite"
-                  : "none",
+        {/* Generate button */}
+        <Flex justify="center">
+          <Button
+            onClick={refine}
+            disabled={!hasSource}
+            styles={{
+              root: {
+                ...buttonBase,
+                background: "linear-gradient(to bottom, #e04000, #c03000)",
+                color: "#fff",
+                boxShadow:
+                  "0 3px 0 #801800, 0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
+                "&:active:not([data-disabled])": {
+                  transform: "translateY(2px)",
+                  boxShadow: "0 1px 0 #801800, 0 2px 4px rgba(0,0,0,0.2)",
+                },
+                "&[data-disabled]": {
+                  background: "linear-gradient(to bottom, #e04000, #c03000)",
+                  opacity: 0.5,
+                },
+              },
             }}
-          />
-          <Text style={{ ...smallLabelStyle, color: isActive ? T.labelText : T.engravedText }}>
-            {statusLabel(refineStatus, refineProgress)}
-          </Text>
+          >
+            {refinedText ? "/// RE-GENERATE ///" : "/// GENERATE ///"}
+          </Button>
         </Flex>
 
         {/* Output display */}
         <Box
           style={{
             background: "#050510",
-            border: `1px solid ${displayText ? T.amberLed + "33" : "#1a1a1e"}`,
+            border: `1px solid ${refinedText ? T.amberLed + "33" : "#1a1a1e"}`,
             borderRadius: 2,
             padding: "1rem",
-            minHeight: 120,
+            minHeight: 100,
             maxHeight: 300,
             overflowY: "auto",
             fontFamily: T.fontDisplay,
@@ -308,7 +317,41 @@ export const RefineModal = ({ opened, onClose }: RefineModalProps) => {
             wordBreak: "break-word" as const,
           }}
         >
-          {displayText || (
+          {refinedText ? (
+            refinedText.split("\n").map((line, i) => (
+              <Flex key={i} gap={8} align="baseline">
+                <Text
+                  span
+                  style={{
+                    flex: 1,
+                    fontFamily: T.fontDisplay,
+                    fontSize: "1.1rem",
+                    lineHeight: 1.7,
+                    color: T.amberLed,
+                    textShadow: `0 0 4px ${T.amberLed}66`,
+                  }}
+                >
+                  {line}
+                </Text>
+                {line.trim() && (
+                  <Text
+                    span
+                    style={{
+                      fontFamily: T.fontLabel,
+                      fontSize: "0.55rem",
+                      color: T.vfdGreen,
+                      textShadow: `0 0 4px ${T.vfdGreen}44`,
+                      flexShrink: 0,
+                      minWidth: 16,
+                      textAlign: "right",
+                    }}
+                  >
+                    {countLineSyllables(line)}
+                  </Text>
+                )}
+              </Flex>
+            ))
+          ) : (
             <Text
               span
               style={{
@@ -318,132 +361,57 @@ export const RefineModal = ({ opened, onClose }: RefineModalProps) => {
                 fontFamily: T.fontDisplay,
               }}
             >
-              REFINED TEXT WILL APPEAR HERE...
-            </Text>
-          )}
-          {refineStatus === "generating" && !refinedText && (
-            <Text
-              span
-              style={{
-                color: T.amberLed,
-                animation: "blink 0.6s step-end infinite",
-              }}
-            >
-              ▊
+              MARKOV OUTPUT WILL APPEAR HERE...
             </Text>
           )}
         </Box>
 
-        {/* Error display */}
-        {refineError && (
-          <Text
-            style={{
-              fontFamily: T.fontLabel,
-              fontSize: "0.55rem",
-              color: "#ff4444",
-              padding: "0.3rem 0",
-            }}
-          >
-            {refineError}
-          </Text>
-        )}
-
         {/* Action buttons */}
-        <Flex gap={8} justify="center" wrap="wrap">
-          {!isActive ? (
-            <Button
-              onClick={refine}
-              disabled={!outputText}
-              styles={{
-                root: {
-                  ...buttonBase,
-                  background: "linear-gradient(to bottom, #e04000, #c03000)",
-                  color: "#fff",
-                  boxShadow:
-                    "0 3px 0 #801800, 0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
-                  "&:active:not([data-disabled])": {
-                    transform: "translateY(2px)",
-                    boxShadow: "0 1px 0 #801800, 0 2px 4px rgba(0,0,0,0.2)",
-                  },
-                  "&[data-disabled]": {
-                    background:
-                      "linear-gradient(to bottom, #e04000, #c03000)",
-                    opacity: 0.5,
-                  },
-                },
-              }}
+        {refinedText && (
+          <Flex gap={8} justify="center">
+            <Tooltip
+              label={copied ? "COPIED!" : "COPY"}
+              position="top"
             >
-              {refinedText ? "/// RE-GENERATE ///" : "/// GENERATE ///"}
-            </Button>
-          ) : (
-            <Button
-              onClick={abortRefine}
-              styles={{
-                root: {
-                  ...buttonBase,
-                  background: "linear-gradient(to bottom, #aa0000, #880000)",
-                  color: "#fff",
-                  boxShadow:
-                    "0 3px 0 #550000, 0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1)",
-                  "&:active:not([data-disabled])": {
-                    transform: "translateY(2px)",
-                    boxShadow: "0 1px 0 #550000, 0 2px 4px rgba(0,0,0,0.2)",
-                  },
-                },
-              }}
-            >
-              /// ABORT ///
-            </Button>
-          )}
-
-          {refinedText && (
-            <>
-              <Tooltip
-                label={copied ? "COPIED!" : "COPY REFINED"}
-                position="top"
-              >
-                <Button
-                  onClick={handleCopy}
-                  styles={{
-                    root: {
-                      ...buttonBase,
-                      background: "linear-gradient(to bottom, #444, #333)",
-                      color: copied ? T.greenLed : "#aaa",
-                      boxShadow:
-                        "0 3px 0 #1a1a1a, 0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.08)",
-                      "&:active:not([data-disabled])": {
-                        transform: "translateY(2px)",
-                        boxShadow:
-                          "0 1px 0 #1a1a1a, 0 2px 4px rgba(0,0,0,0.2)",
-                      },
-                    },
-                  }}
-                >
-                  {copied ? "COPIED" : "COPY"}
-                </Button>
-              </Tooltip>
               <Button
-                onClick={handleUse}
+                onClick={handleCopy}
                 styles={{
                   root: {
                     ...buttonBase,
                     background: "linear-gradient(to bottom, #444, #333)",
-                    color: "#aaa",
+                    color: copied ? T.greenLed : "#aaa",
                     boxShadow:
                       "0 3px 0 #1a1a1a, 0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.08)",
                     "&:active:not([data-disabled])": {
                       transform: "translateY(2px)",
-                      boxShadow:
-                        "0 1px 0 #1a1a1a, 0 2px 4px rgba(0,0,0,0.2)",
+                      boxShadow: "0 1px 0 #1a1a1a, 0 2px 4px rgba(0,0,0,0.2)",
                     },
                   },
                 }}
               >
-                USE AS INPUT
+                {copied ? "COPIED" : "COPY"}
               </Button>
-            </>
-          )}
-        </Flex>
+            </Tooltip>
+            <Button
+              onClick={handleUse}
+              styles={{
+                root: {
+                  ...buttonBase,
+                  background: "linear-gradient(to bottom, #444, #333)",
+                  color: "#aaa",
+                  boxShadow:
+                    "0 3px 0 #1a1a1a, 0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.08)",
+                  "&:active:not([data-disabled])": {
+                    transform: "translateY(2px)",
+                    boxShadow: "0 1px 0 #1a1a1a, 0 2px 4px rgba(0,0,0,0.2)",
+                  },
+                },
+              }}
+            >
+              USE AS INPUT
+            </Button>
+          </Flex>
+        )}
       </Stack>
     </Modal>
   );

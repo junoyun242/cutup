@@ -1,4 +1,4 @@
-export type Technique = 'cutup' | 'foldin' | 'permutation';
+export type Technique = 'cutup' | 'foldin' | 'permutation' | 'lineshuffle' | 'erasure';
 
 export interface HistoryEntry {
   id: string;
